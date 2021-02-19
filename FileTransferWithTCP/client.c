@@ -1,120 +1,62 @@
-#include <stdlib.h>
 #include <stdio.h>
-#include <errno.h>
+#include <stdlib.h>
+#include <unistd.h>
 #include <string.h>
-#include <sys/types.h>
-#include <netinet/in.h>
-#include <sys/wait.h>
-#include <sys/socket.h>
-#include <signal.h>
-#include <ctype.h>
 #include <arpa/inet.h>
-#include <netdb.h>
+#define SIZE 1024
 
-#define PORT 20000
-#define LENGTH 512
+void send_file(FILE *fp, int sockfd){
+  int n;
+  char data[SIZE] = {0};
 
-void error(const char *msg)
-{
-    perror(msg);
-    exit(1);
+  while(fgets(data, SIZE, fp) != NULL) {
+    if (send(sockfd, data, sizeof(data), 0) == -1) {
+      perror("[-]Error in sending file.");
+      exit(1);
+    }
+    bzero(data, SIZE);
+  }
 }
 
-int main(int argc, char *argv[])
-{
-    /* Variable Definition */
-    int sockfd;
-    int nsockfd;
-    char revbuf[LENGTH];
-    struct sockaddr_in remote_addr;
+int main(){
+  char *ip = "127.0.0.1";
+  int port = 8080;
+  int e;
 
-    /* Get the Socket file descriptor */
-    if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) == -1)
-    {
-        fprintf(stderr, "ERROR: Failed to obtain Socket Descriptor! (errno = %d)\n", errno);
-        exit(1);
-    }
+  int sockfd;
+  struct sockaddr_in server_addr;
+  FILE *fp;
+  char *filename = "send.txt";
 
-    /* Fill the socket address struct */
-    remote_addr.sin_family = AF_INET;
-    remote_addr.sin_port = htons(PORT);
-    inet_pton(AF_INET, "127.0.0.1", &remote_addr.sin_addr);
-    bzero(&(remote_addr.sin_zero), 8);
+  sockfd = socket(AF_INET, SOCK_STREAM, 0);
+  if(sockfd < 0) {
+    perror("[-]Error in socket");
+    exit(1);
+  }
+  printf("[+]Server socket created successfully.\n");
 
-    /* Try to connect the remote */
-    if (connect(sockfd, (struct sockaddr *)&remote_addr, sizeof(struct sockaddr)) == -1)
-    {
-        fprintf(stderr, "ERROR: Failed to connect to the host! (errno = %d)\n", errno);
-        exit(1);
-    }
-    else
-        printf("[Client] Connected to server at port %d...ok!\n", PORT);
+  server_addr.sin_family = AF_INET;
+  server_addr.sin_port = port;
+  server_addr.sin_addr.s_addr = inet_addr(ip);
 
-    /* Send File to Server */
-    //if(!fork())
-    //{
-    char *fs_name = "/mnt/e/ACN_Lab/FileTransferWithTCP/recv.txt";
-    char sdbuf[LENGTH];
-    printf("[Client] Sending %s to the Server... ", fs_name);
-    FILE *fs = fopen(fs_name, "r");
-    if (fs == NULL)
-    {
-        printf("ERROR: File %s not found.\n", fs_name);
-        exit(1);
-    }
+  e = connect(sockfd, (struct sockaddr*)&server_addr, sizeof(server_addr));
+  if(e == -1) {
+    perror("[-]Error in socket");
+    exit(1);
+  }
+	printf("[+]Connected to Server.\n");
 
-    bzero(sdbuf, LENGTH);
-    int fs_block_sz;
-    while ((fs_block_sz = fread(sdbuf, sizeof(char), LENGTH, fs)) > 0)
-    {
-        if (send(sockfd, sdbuf, fs_block_sz, 0) < 0)
-        {
-            fprintf(stderr, "ERROR: Failed to send file %s. (errno = %d)\n", fs_name, errno);
-            break;
-        }
-        bzero(sdbuf, LENGTH);
-    }
-    printf("Ok File %s from Client was Sent!\n", fs_name);
-    //}
+  fp = fopen(filename, "r");
+  if (fp == NULL) {
+    perror("[-]Error in reading file.");
+    exit(1);
+  }
 
-    /* Receive File from Server */
-    printf("[Client] Receiveing file from Server and saving it as final.txt...");
-    char *fr_name = "/mnt/e/ACN_Lab/FileTransferWithTCP/final.txt";
-    FILE *fr = fopen(fr_name, "a");
-    if (fr == NULL)
-        printf("File %s Cannot be opened.\n", fr_name);
-    else
-    {
-        bzero(revbuf, LENGTH);
-        int fr_block_sz = 0;
-        while ((fr_block_sz = recv(sockfd, revbuf, LENGTH, 0)) > 0)
-        {
-            int write_sz = fwrite(revbuf, sizeof(char), fr_block_sz, fr);
-            if (write_sz < fr_block_sz)
-            {
-                error("File write failed.\n");
-            }
-            bzero(revbuf, LENGTH);
-            if (fr_block_sz == 0 || fr_block_sz != 512)
-            {
-                break;
-            }
-        }
-        if (fr_block_sz < 0)
-        {
-            if (errno == EAGAIN)
-            {
-                printf("recv() timed out.\n");
-            }
-            else
-            {
-                fprintf(stderr, "recv() failed due to errno = %d\n", errno);
-            }
-        }
-        printf("Ok received from server!\n");
-        fclose(fr);
-    }
-    close(sockfd);
-    printf("[Client] Connection lost.\n");
-    return (0);
+  send_file(fp, sockfd);
+  printf("[+]File data sent successfully.\n");
+
+	printf("[+]Closing the connection.\n");
+  close(sockfd);
+
+  return 0;
 }
